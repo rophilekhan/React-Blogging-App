@@ -1,6 +1,6 @@
-import { onAuthStateChanged } from 'firebase/auth'
 import React, { useEffect, useRef, useState } from 'react'
-import { auth, getData, sendData } from '../config/firebase/firebasemethod'
+import { onAuthStateChanged } from 'firebase/auth'
+import { auth, sendData, getData, getAllData } from '../config/firebase/firebasemethod'
 import { useNavigate } from 'react-router-dom'
 import Navbar from '../Navbar'
 import { Button, Typography } from '@mui/material'
@@ -27,15 +27,13 @@ const Dashbord = () => {
 
   useEffect(() => {
     async function getUserFromDataBase() {
-        let getUserData = await getData("users", userUid)
-        console.log(getUserData);
+      let getUserData = await getAllData("blogs")
+      console.log(getUserData);
     }
     getUserFromDataBase()
   }, [])
 
-
-
-    const sendDataFromFireStore = async (event) => {
+  const sendDataFromFireStore = async (event) => {
     event.preventDefault()
     if (titleRef.current.value === '' || articleRef.current.value === '') {
       alert('Checked Again')
@@ -60,18 +58,6 @@ const Dashbord = () => {
     }
   }
 
-  // Function to get all blogs from Firestore
-  const getAllBlogs = async () => {
-    const allBlogs = await getData("blogs")
-    console.log(allBlogs)
-    setBlogs([...allBlogs])
-  }
-
-  // Call the function to get all blogs when the component mounts
-  useEffect(() => {
-    getAllBlogs()
-  }, [])
-
   return (
     <div>
       <Navbar profile="profile" dashbord="Dashbord" />
@@ -92,19 +78,9 @@ const Dashbord = () => {
           </Typography>
           <div className='mt-4 flex flex-col gap-3'>
             {blogs.length > 0 ? blogs.map((item, index) => (
-              <BlogsPost key={index} blogs={item} />
-            )) : <h1>No Blogs Found...</h1>}
+              <BlogsPost key={index} blog={item} />
+            )) : <p>No Blogs Found...</p>}
           </div>
-        </div>
-      </div>
-      <div className='p-3 container mx-auto'>
-        <Typography variant='h4' className='mt-4'>
-          All Blogs
-        </Typography>
-        <div className='mt-4 flex flex-col gap-3'>
-          {blogs.length > 0 ? blogs.map((item, index) => (
-            <BlogsPost key={index} blogs={item} />
-          )) : <h1>No Blogs Found...</h1>}
         </div>
       </div>
     </div>

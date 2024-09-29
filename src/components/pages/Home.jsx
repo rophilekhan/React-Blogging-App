@@ -13,7 +13,7 @@ const Home = () => {
       if (user) {
         console.log('user logged In')
         let getAllDataFromDb = await getAllData("blogs")
-        setallBlogs(getAllDataFromDb) 
+        setallBlogs(getAllDataFromDb)
         console.log(getAllDataFromDb);
       } else {
         console.log('user logout sucessfully');
@@ -25,17 +25,17 @@ const Home = () => {
     <>
       <Navbar login="login" userName='Rophile Ahmed Khan' />
       <section className='container mx-auto p-1'>
-        <Typography variant='h3' fontWeight='bold' className='p-2'>Write Blog</Typography>
+        <Typography variant='h3' fontWeight='bold' className='p-2'>All Blogs</Typography>
         <hr />
 
         {allBlogs.length > 0 ? (
           <div>
             {allBlogs.map((blog) => (
-              <BlogsPost key={blog.id} blog={blog} />
+              <BlogsPost key={blog.documentId} blog={blog} />
             ))}
           </div>
         ) : (
-          <p>Blogs</p>
+          <p>No Blogs Found...</p>
         )}
       </section>
     </>
