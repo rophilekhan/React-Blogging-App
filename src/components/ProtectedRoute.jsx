@@ -1,6 +1,6 @@
 import { onAuthStateChanged } from 'firebase/auth'
 import React, { useEffect } from 'react'
-import { auth } from '../Config/firebase/FirebaseMethod'
+import { auth } from '../components/config/firebase/firebasemethod'
 import { useNavigate } from 'react-router-dom'
 
 const ProtectedRout = ({ component }) => {

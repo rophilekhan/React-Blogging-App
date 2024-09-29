@@ -12,7 +12,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Logout from '@mui/icons-material/Logout';
 import Tooltip from '@mui/material/Tooltip';
 import Settings from '@mui/icons-material/Settings';
-import { signOutUser } from '../Config/firebase/FirebaseMethod';
+import { signOutUser } from '../components/config/firebase/firebasemethod';
 
 export default function AccountMenu() {
     let navigate = useNavigate()

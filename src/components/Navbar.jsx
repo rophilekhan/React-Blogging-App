@@ -1,8 +1,9 @@
+// import { onAuthStateChanged } from 'firebase/auth'
 import { onAuthStateChanged } from 'firebase/auth'
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import AccountMenu from './Menu'
-import { auth } from '../Config/firebase/FirebaseMethod'
+import { auth } from '../components/config/firebase/firebasemethod'
 import { Typography } from '@mui/material'
 
 const Navbar = ({ profile, login, register, dashbord, userName }) => {

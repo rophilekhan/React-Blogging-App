@@ -1,29 +1,11 @@
-import {
-    getAuth,
-    createUserWithEmailAndPassword,
-    signInWithEmailAndPassword,
-    signOut,
-} from "firebase/auth";
-import app from "./firebaseconfig";
-import {
-    getFirestore,
-    collection,
-    addDoc,
-    getDocs,
-    query,
-    where,
-    deleteDoc,
-    doc,
-    updateDoc,
-} from "firebase/firestore";
-
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import app from "./firebaseconfig"
+import { getFirestore, collection, addDoc, getDocs, query, where, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { getDownloadURL, getStorage, ref, uploadBytes } from "firebase/storage";
 
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
-
-
 
 let signUpUser = (obj) => {
     return new Promise((resolve, reject) => {
