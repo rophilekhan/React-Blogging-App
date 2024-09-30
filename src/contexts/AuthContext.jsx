@@ -1,23 +1,20 @@
-import { createContext, useState, useEffect } from 'react';
+// AuthContext.js
+import { createContext, useContext, useState } from 'react';
 
 const AuthContext = createContext();
 
 const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
 
-  useEffect(() => {
-    // Add authentication logic here
-  }, []);
-
   const useAuth = () => {
     return { user, setUser };
   };
 
   return (
-    <AuthContext.Provider value={{ useAuth }}>
+    <AuthContext.Provider value={useAuth}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export { AuthProvider, AuthContext };
+export { AuthProvider, useAuth };

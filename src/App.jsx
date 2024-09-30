@@ -1,44 +1,21 @@
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import { createBrowserRouter, RouterProvider } from 'react-router-dom'
-import Layout from './Layout.jsx'
-import Login from './components/pages/Login.jsx'
-import Register from './components/pages/Register.jsx'
-import Home from './components/pages/Home.jsx'
-import Dashbord from './components/pages/Dashboard.jsx'
-import Profile from './components/pages/Profile.jsx'
+import React from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import Home from './Home'
+import Dashboard from './Dashboard'
 
-const router = createBrowserRouter([
-  {
-    path: '',
-    element: <Layout />,
-    children : [
-      {
-        path : '/',
-        element: <Home />
-      },
-      {
-        path: 'login',
-        element: <Login/>
-      },
-      {
-        path: 'register',
-        element: <Register/>
-      },
-      {
-        path : 'dashbord',
-        element :<ProtectedRout component={<Dashbord/>}/>
-      },
-      {
-        path : 'profile',
-        element :<ProtectedRout component={<Profile/>}/>
-      }
-    ]
+const App = () => {
+  const handleNewPost = () => {
+    // Update the state here
   }
-])
 
-createRoot(document.getElementById('root')).render(
-  <RouterProvider router={router}>
-    <Layout />
-  </RouterProvider>
-)
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/dashboard" element={<Dashboard onNewPost={handleNewPost} />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
+
+export default App
