@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users profile collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Blogs collection
+    match /blogs/{blogId} {
+      // Anyone can read blogs
+      allow read: if true;
+
+      // Only authenticated users can publish blogs
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid;
+
+      // Authors can update their blogs, and authenticated users can toggle likes
+      allow update: if request.auth != null && (
+        request.auth.uid == resource.data.uid ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy'])
+      );
+
+      // Only the author can delete their blog
+      allow delete: if request.auth != null && request.auth.uid == resource.data.uid;
+    }
+  }
+}
