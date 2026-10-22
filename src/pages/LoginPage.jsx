@@ -19,21 +19,36 @@ const LoginPage = () => {
   const { user, login, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  // Logged-in users visiting /login auto-redirect to /dashboard
+  // Logged-in users visiting /login auto-redirect to /
   useEffect(() => {
     if (user) {
-      navigate("/dashboard", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [user, navigate]);
+
+  const mapAuthError = (err) => {
+    const code = err?.code || "";
+    if (
+      code === "auth/invalid-credential" ||
+      code === "auth/wrong-password" ||
+      code === "auth/user-not-found"
+    ) {
+      return "Invalid email or password. Please try again.";
+    }
+    if (code === "auth/unauthorized-domain") {
+      return "This domain is not authorized. Update Firebase settings.";
+    }
+    return "An unexpected error occurred. Please try again.";
+  };
 
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleSubmitting(true);
       setError("");
       await loginWithGoogle();
-      navigate("/dashboard");
+      navigate("/");
     } catch (err) {
-      setError(err?.message || "Google sign-in failed. Please try again.");
+      setError(mapAuthError(err));
     } finally {
       setIsGoogleSubmitting(false);
     }
@@ -51,11 +66,9 @@ const LoginPage = () => {
     try {
       setIsSubmitting(true);
       await login(email, password, rememberMe);
-      navigate("/dashboard");
+      navigate("/");
     } catch (err) {
-      const message =
-        err?.message || "Failed to sign in. Please check your credentials.";
-      setError(message);
+      setError(mapAuthError(err));
     } finally {
       setIsSubmitting(false);
     }

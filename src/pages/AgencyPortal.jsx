@@ -134,7 +134,7 @@ const AgencyPortal = () => {
       {/* ── Top Bar ──────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 px-6 py-4 flex items-center justify-between backdrop-blur-xl bg-slate-950/60 border-b border-purple-500/20">
         <Link
-          to="/dashboard"
+          to="/"
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-purple-400/30 text-purple-200 hover:text-white text-xs font-semibold shadow-lg shadow-purple-900/20 transition-all"
         >
           <span>←</span>

@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
-import LandingPage from "./pages/LandingPage";
 import DashboardPage from "./pages/DashboardPage";
 import ReadPage from "./pages/ReadPage";
 import ProfilePage from "./pages/ProfilePage";
@@ -16,6 +15,7 @@ import { useAudioStore } from "./store/audioStore";
 // Mounted outside <Routes> to ensure continuous, uninterrupted music playback
 const GlobalAudio = () => {
   const audioRef = useRef(null);
+  const currentUrlRef = useRef("");
   const isPlaying = useAudioStore((state) => state.isPlaying);
   const volume = useAudioStore((state) => state.volume);
   const currentTrackIndex = useAudioStore((state) => state.currentTrackIndex);
@@ -23,38 +23,87 @@ const GlobalAudio = () => {
   const nextTrack = useAudioStore((state) => state.nextTrack);
   const pause = useAudioStore((state) => state.pause);
 
-  const currentTrack = tracks[currentTrackIndex] || tracks[0];
+  const currentTrack = tracks[currentTrackIndex] || tracks[0] || {};
+  const trackUrl = currentTrack.url || "";
 
-  // Sync play / pause state
+  // 1. Source Synchronization: ONLY reload audio stream if the track URL actually changes
   useEffect(() => {
-    if (!audioRef.current) return;
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (trackUrl && trackUrl !== currentUrlRef.current) {
+      currentUrlRef.current = trackUrl;
+      audio.src = trackUrl;
+      audio.load();
+
+      if (isPlaying) {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn("Audio stream playback transition notice:", err);
+          });
+        }
+      }
+    }
+  }, [trackUrl, isPlaying]);
+
+  // 2. Play / Pause Control: Separated from URL loading to prevent reload on React state updates
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !currentUrlRef.current) return;
 
     if (isPlaying) {
-      const playPromise = audioRef.current.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn("Autoplay restriction encountered:", err);
-          pause();
-        });
+      if (audio.paused) {
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.catch((err) => {
+            console.warn("Autoplay restriction encountered:", err);
+            pause();
+          });
+        }
       }
     } else {
-      audioRef.current.pause();
+      if (!audio.paused) {
+        audio.pause();
+      }
     }
-  }, [isPlaying, currentTrackIndex, pause]);
+  }, [isPlaying, pause]);
 
-  // Sync volume level
+  // 3. Volume Level Synchronization
   useEffect(() => {
     if (audioRef.current) {
       audioRef.current.volume = volume;
     }
   }, [volume]);
 
+  // 4. Natural Audio Completion Handler: Handles iTunes 30-second previews and full tracks
+  const lastEndedTimestampRef = useRef(0);
+  const handleAudioEnded = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    // Verify track naturally completed (handles iTunes 30s preview limit and normal tracks)
+    const isNaturallyFinished =
+      audio.ended ||
+      (audio.duration > 0 && Math.abs(audio.currentTime - audio.duration) < 1.5) ||
+      audio.currentTime >= 28;
+
+    const now = Date.now();
+    // Guard against rapid duplicate skip events
+    if (isNaturallyFinished && now - lastEndedTimestampRef.current > 1500) {
+      lastEndedTimestampRef.current = now;
+      nextTrack();
+    }
+  };
+
   return (
     <>
       <audio
         ref={audioRef}
-        src={currentTrack.url}
-        onEnded={nextTrack}
+        onEnded={handleAudioEnded}
+        onError={(e) => {
+          console.warn("Audio stream notice:", e?.message || "Stream decode notice");
+        }}
         preload="auto"
       />
       <MusicPlayer3D />
@@ -70,14 +119,15 @@ const App = () => {
         <GlobalAudio />
 
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          {/* Entirely public true homepage: DashboardPage with Guest Mode enabled */}
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/dashboard" element={<Navigate to="/" replace />} />
+          <Route path="/landing" element={<Navigate to="/" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/landing" element={<LandingPage />} />
           <Route path="/blog/:id" element={<ReadPage />} />
           <Route path="/codesphinx-portal" element={<AgencyPortal />} />
-          {/* Entirely public dashboard accessible to guests and authors */}
-          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/agency" element={<AgencyPortal />} />
           <Route
             path="/profile"
             element={
@@ -86,7 +136,7 @@ const App = () => {
               </ProtectedRoute>
             }
           />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

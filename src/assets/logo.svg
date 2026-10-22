@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <!-- Cyan to Electric Purple to Magenta Neon Gradient -->
+    <linearGradient id="cyberNeon" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00F5FF" />
+      <stop offset="50%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+
+    <!-- Deep Cyber Space Background -->
+    <linearGradient id="hexBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F1F" />
+      <stop offset="100%" stop-color="#030712" />
+    </linearGradient>
+
+    <!-- Glassmorphic Top Specular Reflection -->
+    <linearGradient id="glassReflection" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.02" />
+    </linearGradient>
+
+    <!-- Neon Glow Filter -->
+    <filter id="cyberGlow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+      <feMerge>
+        <feMergeNode in="coloredBlur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer Cyber Hexagonal Frame with Glassmorphic Border -->
+  <polygon points="50,3 91,26.5 91,73.5 50,97 9,73.5 9,26.5" fill="url(#hexBg)" stroke="url(#cyberNeon)" stroke-width="2.5" stroke-linejoin="round" />
+  
+  <!-- Subtle Internal Grid Lines -->
+  <path d="M50 3 L50 25 M50 97 L50 75 M9 26.5 L28 37.5 M91 73.5 L72 62.5 M91 26.5 L72 37.5 M9 73.5 L28 62.5" stroke="#8B5CF6" stroke-width="1" stroke-opacity="0.3" />
+
+  <!-- Futuristic Cyberpunk 'S' Main Monogram Body -->
+  <g filter="url(#cyberGlow)">
+    <!-- Continuous Cyber 'S' Monogram -->
+    <path d="M74 24 L34 24 C27 24 22 29 22 36 L22 39 C22 45 27 50 33 50 L64 50 C71 50 76 55 76 61 L76 65 C76 72 70 77 63 77 L24 77" fill="none" stroke="url(#cyberNeon)" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" />
+    <!-- Diagonal Cyber Accent -->
+    <path d="M46 36 L56 65" stroke="#00F5FF" stroke-width="3" stroke-linecap="round" stroke-dasharray="2 4" />
+  </g>
+
+  <!-- Glowing Terminal Nodes -->
+  <circle cx="74" cy="24" r="4" fill="#00F5FF" filter="url(#cyberGlow)" />
+  <circle cx="24" cy="77" r="4" fill="#EC4899" filter="url(#cyberGlow)" />
+  <circle cx="50" cy="50" r="2.5" fill="#FFFFFF" />
+
+  <!-- Top Glass Sheen -->
+  <polygon points="50,4 89,27 75,35 50,22 25,35 11,27" fill="url(#glassReflection)" />
+</svg>

@@ -12,6 +12,7 @@ import {
   browserSessionPersistence,
   GoogleAuthProvider,
   signInWithPopup,
+  updateProfile,
 } from "firebase/auth";
 import app from "./config";
 import {
@@ -29,6 +30,8 @@ import {
   getDoc,
   orderBy,
   serverTimestamp,
+  arrayUnion,
+  arrayRemove,
 } from "firebase/firestore";
 import {
   getDownloadURL,
@@ -272,4 +275,227 @@ export const uploadImage = async (file, path) => {
     15000,
     "Image upload timed out after 15 seconds. Please check your network connection and file size."
   );
+};
+
+// ─── Bookmark / Save Post Methods ───────────────────────────────────────────
+export const getUserSavedPostIds = async (userId) => {
+  if (!userId) return [];
+  try {
+    const userDocRef = doc(db, "users", userId);
+    const snap = await withTimeout(getDoc(userDocRef), 3500, "Fetch saved posts timed out");
+    if (snap.exists() && Array.isArray(snap.data()?.savedPosts)) {
+      const list = snap.data().savedPosts;
+      try {
+        localStorage.setItem(`synthscroll_saved_${userId}`, JSON.stringify(list));
+      } catch {}
+      return list;
+    }
+  } catch (err) {
+    console.warn("Using local cache for saved posts:", err);
+  }
+
+  try {
+    return JSON.parse(localStorage.getItem(`synthscroll_saved_${userId}`) || "[]");
+  } catch {
+    return [];
+  }
+};
+
+export const toggleSavePost = async (userId, postOrId) => {
+  if (!userId || !postOrId) return { isSaved: false, savedPosts: [] };
+
+  const targetId =
+    typeof postOrId === "string"
+      ? postOrId
+      : postOrId.documentId || postOrId.id || postOrId.sourceUrl || postOrId.title;
+
+  let currentSaved = [];
+  try {
+    currentSaved = JSON.parse(localStorage.getItem(`synthscroll_saved_${userId}`) || "[]");
+  } catch {
+    currentSaved = [];
+  }
+
+  // Find if already saved by matching string ID or object documentId/id/sourceUrl/title
+  const existingIndex = currentSaved.findIndex((item) => {
+    if (!item) return false;
+    if (typeof item === "string") return item === targetId;
+    if (typeof item === "object") {
+      return (
+        item.documentId === targetId ||
+        item.id === targetId ||
+        (postOrId.sourceUrl && item.sourceUrl === postOrId.sourceUrl) ||
+        (postOrId.title && item.title === postOrId.title)
+      );
+    }
+    return false;
+  });
+
+  const isAlreadySaved = existingIndex >= 0;
+  let updatedSaved = [];
+
+  if (isAlreadySaved) {
+    // Remove from array
+    updatedSaved = currentSaved.filter((_, idx) => idx !== existingIndex);
+  } else {
+    // If saving an external post object, store the complete post object with attribution
+    const isExternalPost =
+      typeof postOrId === "object" &&
+      (postOrId.isExternal ||
+        postOrId.sourceName ||
+        postOrId.sourceUrl ||
+        postOrId.uid === "system_seeder" ||
+        String(postOrId.documentId || "").startsWith("api_"));
+
+    const itemToSave = isExternalPost
+      ? {
+          documentId: postOrId.documentId || postOrId.id || `api_${Date.now()}`,
+          id: postOrId.documentId || postOrId.id || `api_${Date.now()}`,
+          title: postOrId.title || "External Story",
+          content: postOrId.content || "",
+          imageUrl: postOrId.imageUrl || postOrId.coverImage || "",
+          coverImage: postOrId.imageUrl || postOrId.coverImage || "",
+          authorName: postOrId.authorName || "Wire Desk",
+          authorEmail: postOrId.authorEmail || "wire@synthscroll.dev",
+          category: postOrId.category || "Technology",
+          sourceUrl: postOrId.sourceUrl || postOrId.url || "",
+          sourceName: postOrId.sourceName || "External Feed",
+          isExternal: true,
+          likes: postOrId.likes || 0,
+          createdAtClient: postOrId.createdAtClient || new Date().toISOString(),
+        }
+      : typeof postOrId === "string"
+      ? postOrId
+      : postOrId.documentId || targetId;
+
+    updatedSaved = [itemToSave, ...currentSaved];
+  }
+
+  try {
+    localStorage.setItem(`synthscroll_saved_${userId}`, JSON.stringify(updatedSaved));
+  } catch {}
+
+  try {
+    const userDocRef = doc(db, "users", userId);
+    await withTimeout(
+      setDoc(
+        userDocRef,
+        {
+          savedPosts: updatedSaved,
+        },
+        { merge: true }
+      ),
+      4000,
+      "Firestore save post timed out"
+    );
+  } catch (err) {
+    console.warn("Cloud saved post sync warning:", err);
+  }
+
+  return { isSaved: !isAlreadySaved, savedPosts: updatedSaved };
+};
+
+// ─── Comments Subcollection Methods ─────────────────────────────────────────
+export const addCommentToBlog = async (blogId, commentObj) => {
+  const commentId = `comment_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const newComment = {
+    ...commentObj,
+    id: commentId,
+    createdAtClient: new Date().toISOString(),
+  };
+
+  // Cache locally
+  try {
+    const localComments = JSON.parse(
+      localStorage.getItem(`synthscroll_comments_${blogId}`) || "[]"
+    );
+    localStorage.setItem(
+      `synthscroll_comments_${blogId}`,
+      JSON.stringify([newComment, ...localComments])
+    );
+  } catch {}
+
+  try {
+    const commentsCol = collection(db, "blogs", blogId, "comments");
+    await withTimeout(
+      addDoc(commentsCol, {
+        ...commentObj,
+        createdAt: serverTimestamp(),
+      }),
+      4000,
+      "Add comment timed out"
+    );
+  } catch (err) {
+    console.warn("Comment cloud sync warning:", err);
+  }
+
+  return newComment;
+};
+
+export const getBlogComments = async (blogId) => {
+  let cloudComments = [];
+  try {
+    const commentsCol = collection(db, "blogs", blogId, "comments");
+    const q = query(commentsCol, orderBy("createdAt", "desc"));
+    const snap = await withTimeout(getDocs(q), 4000, "Get comments timed out");
+    cloudComments = snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+  } catch (err) {
+    // fallback to local
+  }
+
+  let localComments = [];
+  try {
+    localComments = JSON.parse(
+      localStorage.getItem(`synthscroll_comments_${blogId}`) || "[]"
+    );
+  } catch {}
+
+  const map = new Map();
+  [...localComments, ...cloudComments].forEach((c) => {
+    const key = c.id || `${c.uid}_${c.createdAtClient}`;
+    map.set(key, c);
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const timeA = a.createdAt?.seconds
+      ? a.createdAt.seconds * 1000
+      : new Date(a.createdAtClient || 0).getTime();
+    const timeB = b.createdAt?.seconds
+      ? b.createdAt.seconds * 1000
+      : new Date(b.createdAtClient || 0).getTime();
+    return timeB - timeA;
+  });
+};
+
+// ─── User Profile Update Method ─────────────────────────────────────────────
+export const updateUserProfileData = async (user, { displayName, photoURL }) => {
+  if (!user) throw new Error("No authenticated user");
+
+  const updateObj = {};
+  if (displayName !== undefined) updateObj.displayName = displayName;
+  if (photoURL !== undefined) updateObj.photoURL = photoURL;
+
+  // 1. Update Firebase Auth user
+  await updateProfile(user, updateObj);
+
+  // 2. Update Firestore user document
+  try {
+    const userDocRef = doc(db, "users", user.uid);
+    await withTimeout(
+      setDoc(
+        userDocRef,
+        {
+          name: displayName || user.displayName,
+          photoURL: photoURL || user.photoURL,
+          email: user.email,
+        },
+        { merge: true }
+      ),
+      4000,
+      "Firestore user update timed out"
+    );
+  } catch (err) {
+    console.warn("Profile document update warning:", err);
+  }
+
+  return user;
 };

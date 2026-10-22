@@ -5,7 +5,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useDraftStore } from "../../store/draftStore";
 import { analyzeContent, replyToDebate } from "../../services/aiService";
 
-const CATEGORIES = ["Technology", "Design", "AI & Robotics", "Web3", "Life & Ideas"];
+const CATEGORIES = ["Technology", "Design", "AI & Robotics", "Web3", "Life & Ideas", "Other"];
 
 const PostModal = ({ isOpen, onClose, onPostCreated }) => {
   const { user } = useAuth();
@@ -21,6 +21,7 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
+  const [customCategory, setCustomCategory] = useState("");
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -57,6 +58,7 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
       isInitialHydrated.current = false;
       setSaveStatus("");
       setError("");
+      setCustomCategory("");
       setIsAiOpen(false);
       setAiReview(null);
       setDebateMessages([]);
@@ -180,6 +182,7 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
       setTitle("");
       setContent("");
       setCategory(CATEGORIES[0]);
+      setCustomCategory("");
       setImageFile(null);
       setImagePreview(null);
       setSaveStatus("");
@@ -197,6 +200,11 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
       return;
     }
 
+    if (category === "Other" && !customCategory.trim()) {
+      setError("Please enter your custom category name.");
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       let imageUrl = "";
@@ -206,10 +214,13 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
         imageUrl = await uploadImage(imageFile, path);
       }
 
+      const finalCategory =
+        category === "Other" ? customCategory.trim() || "General" : category;
+
       const newPost = {
         title: title.trim(),
         content: content.trim(),
-        category,
+        category: finalCategory,
         imageUrl,
         uid: user?.uid || "anonymous",
         authorEmail: user?.email || "anonymous@blogverse.dev",
@@ -227,6 +238,8 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
 
       setTitle("");
       setContent("");
+      setCategory(CATEGORIES[0]);
+      setCustomCategory("");
       setImageFile(null);
       setImagePreview(null);
       setSaveStatus("");
@@ -376,6 +389,24 @@ const PostModal = ({ isOpen, onClose, onPostCreated }) => {
                     </button>
                   ))}
                 </div>
+
+                {/* Custom Category Input if 'Other' is selected */}
+                {category === "Other" && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mt-2.5"
+                  >
+                    <input
+                      type="text"
+                      required
+                      value={customCategory}
+                      onChange={(e) => setCustomCategory(e.target.value)}
+                      placeholder="Enter custom category name (e.g. Astrophysics, Poetry, Quantum...)"
+                      className="w-full px-4 py-2.5 rounded-xl bg-slate-950/80 border border-indigo-400/50 text-white placeholder-slate-500 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400/30 transition-all"
+                    />
+                  </motion.div>
+                )}
               </div>
 
               {/* Content Textarea */}

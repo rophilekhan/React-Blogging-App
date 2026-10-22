@@ -3,14 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "../components/ui/Navbar";
 import BlogCard from "../components/ui/BlogCard";
-import SkeletonBlogCard from "../components/ui/SkeletonBlogCard";
+import BlogCardSkeleton from "../components/ui/BlogCardSkeleton";
 import PostModal from "../components/ui/PostModal";
 import LiveWidgets from "../components/ui/LiveWidgets";
 import Loader3D from "../components/ui/Loader3D";
 import EasterEggArtifact from "../components/3d/EasterEggArtifact";
 import { useAuth } from "../contexts/AuthContext";
 import { getAllData, getData } from "../firebase/methods";
-import { seedAdvancedFeed } from "../services/apiSeeder";
+import { fetchMultiSourceFeed, deduplicateArticles } from "../services/apiSeeder";
 
 // Dynamic chunk-splitting for subtle background particle canvas
 const ParticleField = lazy(() => import("../components/3d/ParticleField"));
@@ -23,13 +23,22 @@ const getCachedBlogs = () => {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return deduplicateArticles(parsed);
       }
     }
   } catch (e) {
     console.warn("Failed to parse cached feed:", e);
   }
   return [];
+};
+
+const getBlogCardKey = (blog, idx) => {
+  if (blog.documentId) return `card-doc-${blog.documentId}`;
+  if (blog.id) return `card-id-${blog.id}`;
+  if (blog.sourceUrl) return `card-url-${blog.sourceUrl}`;
+  const slug = (blog.title || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (slug) return `card-slug-${slug}`;
+  return `card-idx-${idx}`;
 };
 
 const DashboardPage = () => {
@@ -40,16 +49,18 @@ const DashboardPage = () => {
   const [blogs, setBlogs] = useState(getCachedBlogs);
   const [loading, setLoading] = useState(() => getCachedBlogs().length === 0);
   const [isRevalidating, setIsRevalidating] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSeeding, setIsSeeding] = useState(false);
-  const [seedNotice, setSeedNotice] = useState("");
 
+  const pageRef = useRef(1);
+  const observerTarget = useRef(null);
   const blogsRef = useRef(blogs);
   blogsRef.current = blogs;
 
-  // Stale-While-Revalidate Feed Fetcher
+  // ── Auto-Fetch Engine (Firebase + Live External APIs with Strict Deduplication)
   const fetchBlogs = useCallback(
     async (isSilent = false) => {
       try {
@@ -59,15 +70,31 @@ const DashboardPage = () => {
           setIsRevalidating(true);
         }
 
-        let data = [];
+        let firebaseData = [];
+        let externalData = [];
+
         if (activeTab === "my" && user?.uid) {
-          data = await getData("blogs", user.uid);
+          firebaseData = await getData("blogs", user.uid);
         } else {
-          data = await getAllData("blogs");
+          // Concurrently fetch Firebase user stories and multi-source external dispatches
+          const [fbResult, apiResult] = await Promise.allSettled([
+            getAllData("blogs"),
+            fetchMultiSourceFeed(1, 6),
+          ]);
+
+          if (fbResult.status === "fulfilled" && Array.isArray(fbResult.value)) {
+            firebaseData = fbResult.value;
+          }
+          if (apiResult.status === "fulfilled" && Array.isArray(apiResult.value)) {
+            externalData = apiResult.value;
+          }
         }
 
+        // Combine Firebase stories and live external API articles
+        const combined = [...(firebaseData || []), ...(externalData || [])];
+
         // Sort newest first
-        const sorted = (data || []).sort((a, b) => {
+        const sorted = combined.sort((a, b) => {
           const timeA = a.createdAt?.seconds
             ? a.createdAt.seconds * 1000
             : new Date(a.createdAtClient || 0).getTime();
@@ -77,12 +104,17 @@ const DashboardPage = () => {
           return timeB - timeA;
         });
 
-        setBlogs(sorted);
+        // Strict deduplication using Set on title, URL, and documentId
+        const uniqueBlogs = deduplicateArticles(sorted);
+
+        setBlogs(uniqueBlogs);
+        pageRef.current = 1;
+        setHasMore(true);
 
         // Cache the primary feed in sessionStorage for zero-latency instant display
         if (activeTab === "all") {
           try {
-            sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify(sorted));
+            sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify(uniqueBlogs));
           } catch (cacheErr) {
             console.warn("sessionStorage cache write error:", cacheErr);
           }
@@ -97,29 +129,100 @@ const DashboardPage = () => {
     [activeTab, user?.uid]
   );
 
+  // Trigger auto-fetching on mount and tab switch
   useEffect(() => {
     fetchBlogs(blogsRef.current.length > 0);
   }, [fetchBlogs]);
 
-  // Advanced Multi-API Aggregator Seeder Action (News, Reddit, Music)
-  const handleFetchAdvancedFeed = async () => {
+  // ── Infinite Scroll: Seamless Auto-Fetch on Intersection (Preserving Prev State) ──
+  const handleLoadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || loading || activeTab === "my") return;
+
     try {
-      setIsSeeding(true);
-      setSeedNotice("");
-      const result = await seedAdvancedFeed(6);
-      setSeedNotice(
-        `⚡ Synced ${result.count} multi-source dispatches (News, Reddit & Music) into feed!`
-      );
-      await fetchBlogs(true);
-      setTimeout(() => setSeedNotice(""), 4500);
+      setLoadingMore(true);
+      const nextPage = pageRef.current + 1;
+      const nextDispatches = await fetchMultiSourceFeed(nextPage, 6);
+
+      if (!nextDispatches || nextDispatches.length === 0) {
+        setHasMore(false);
+        return;
+      }
+
+      pageRef.current = nextPage;
+
+      setBlogs((prev) => {
+        // Collect existing identifiers
+        const existingUrls = new Set(
+          prev
+            .map((b) => (b.sourceUrl || b.url || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
+        const existingTitles = new Set(
+          prev
+            .map((b) => (b.title || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""))
+            .filter(Boolean)
+        );
+        const existingIds = new Set(
+          prev.map((b) => b.documentId || b.id).filter(Boolean)
+        );
+
+        // Filter strictly new items so existing objects remain untouched
+        const freshItems = nextDispatches.filter((item) => {
+          if (!item) return false;
+          const id = item.documentId || item.id;
+          if (id && existingIds.has(id)) return false;
+          const normTitle = (item.title || "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+          if (normTitle && existingTitles.has(normTitle)) return false;
+          const normUrl = (item.sourceUrl || item.url || "").trim().toLowerCase();
+          if (normUrl && existingUrls.has(normUrl)) return false;
+          return true;
+        });
+
+        if (freshItems.length === 0) return prev;
+
+        // Append strictly new items without reordering or remounting existing items
+        const merged = [...prev, ...freshItems];
+        if (activeTab === "all") {
+          try {
+            sessionStorage.setItem(FEED_CACHE_KEY, JSON.stringify(merged));
+          } catch (e) {
+            // Ignore quota errors
+          }
+        }
+        return merged;
+      });
     } catch (err) {
-      console.error("Live multi-API seeding failed:", err);
-      setSeedNotice("Failed to sync live feeds. Please try again.");
-      setTimeout(() => setSeedNotice(""), 4000);
+      console.warn("Infinite scroll auto-fetch notice:", err);
     } finally {
-      setIsSeeding(false);
+      setLoadingMore(false);
     }
-  };
+  }, [loadingMore, hasMore, loading, activeTab]);
+
+  useEffect(() => {
+    const target = observerTarget.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting) {
+          handleLoadMore();
+        }
+      },
+      {
+        root: null,
+        rootMargin: "350px", // Trigger early before reaching viewport end
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(target);
+
+    return () => {
+      if (target) observer.unobserve(target);
+      observer.disconnect();
+    };
+  }, [handleLoadMore]);
 
   const handlePostDeleted = (deletedId) => {
     setBlogs((prev) => {
@@ -134,15 +237,58 @@ const DashboardPage = () => {
   };
 
   // Filtered stories
+  // Dynamic Category Extraction: Includes base topics plus any custom author categories in feed
+  const categories = useMemo(() => {
+    const base = [
+      "All",
+      "Technology",
+      "Social & Trending",
+      "Music & Culture",
+      "Design",
+      "AI & Robotics",
+      "Web3",
+    ];
+    const customFound = new Set();
+    blogs.forEach((b) => {
+      if (b.category && typeof b.category === "string") {
+        const trimmed = b.category.trim();
+        const inBase = base.some((bc) => bc.toLowerCase() === trimmed.toLowerCase());
+        if (!inBase && trimmed.length > 0) {
+          customFound.add(trimmed);
+        }
+      }
+    });
+    return [...base, ...Array.from(customFound)];
+  }, [blogs]);
+
+  // Robust Filtered stories engine
   const filteredBlogs = useMemo(() => {
     return blogs.filter((blog) => {
+      const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
-        (blog.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (blog.content || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (blog.authorName || "").toLowerCase().includes(searchQuery.toLowerCase());
+        !q ||
+        (blog.title || "").toLowerCase().includes(q) ||
+        (blog.content || "").toLowerCase().includes(q) ||
+        (blog.authorName || "").toLowerCase().includes(q);
 
-      const matchesCategory =
-        selectedCategory === "All" || blog.category === selectedCategory;
+      const matchesCategory = (() => {
+        if (!selectedCategory || selectedCategory === "All") return true;
+        const sel = selectedCategory.trim().toLowerCase();
+        const cat = (blog.category || "").trim().toLowerCase();
+
+        // Exact match
+        if (cat === sel) return true;
+
+        // Semantic synonym mappings
+        if (sel === "technology" && (cat === "tech" || cat === "space")) return true;
+        if (sel.includes("ai") && (cat === "ai" || cat.includes("robot"))) return true;
+        if (sel.includes("music") && (cat === "music" || cat.includes("culture") || cat.includes("sound"))) return true;
+        if (sel.includes("social") && (cat === "social" || cat.includes("trend") || cat.includes("discuss"))) return true;
+        if (sel === "web3" && (cat.includes("crypto") || cat.includes("blockchain"))) return true;
+
+        // Substring / fuzzy match
+        return cat.includes(sel) || sel.includes(cat);
+      })();
 
       return matchesSearch && matchesCategory;
     });
@@ -158,16 +304,6 @@ const DashboardPage = () => {
     return blogs.reduce((acc, curr) => acc + (curr.likes || 0), 0);
   }, [blogs]);
 
-  const categories = [
-    "All",
-    "Technology",
-    "Social & Trending",
-    "Music & Culture",
-    "Design",
-    "AI & Robotics",
-    "Web3",
-  ];
-
   return (
     <div className="relative min-h-screen text-white select-none pb-24 bg-[#050714] overflow-x-hidden">
       {/* ── 3D Particle Canvas Background with Suspense ───────────────────── */}
@@ -179,35 +315,11 @@ const DashboardPage = () => {
       <Navbar
         isDashboard={true}
         onOpenWriteModal={() => setIsModalOpen(true)}
-        onFetchAdvancedFeed={handleFetchAdvancedFeed}
-        isSeeding={isSeeding}
         isRevalidating={isRevalidating}
       />
 
       {/* ── Main Layout (Content Grid + Live Widgets Sidebar) ─────────────── */}
       <main className="max-w-7xl mx-auto px-4 py-6 md:p-8">
-        {/* Live Seed Feedback Banner */}
-        <AnimatePresence>
-          {seedNotice && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs sm:text-sm flex items-center justify-between shadow-lg backdrop-blur-md"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-base shrink-0">✨</span>
-                <span className="font-medium truncate">{seedNotice}</span>
-              </div>
-              <button
-                onClick={() => setSeedNotice("")}
-                className="text-emerald-300 hover:text-white text-xs px-2 py-1 shrink-0 ml-2"
-              >
-                ✕
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Welcome & Stats Banner */}
         <section className="mb-6 sm:mb-8">
@@ -217,7 +329,7 @@ const DashboardPage = () => {
                 {user ? "Spatial Author Portal" : "Decentralized Public Mesh"}
               </span>
               <h1 className="text-xl sm:text-2xl md:text-4xl font-extrabold font-display text-white mt-1 leading-tight">
-                {user ? "Explore & Publish Dimensions" : "Explore SynthScroll Universe"}
+                {user ? "Explore & Publish Blogs" : "Explore SynthScroll Universe"}
               </h1>
               <p className="text-xs sm:text-sm text-slate-300/80 mt-1.5 leading-relaxed">
                 {user ? (
@@ -293,11 +405,10 @@ const DashboardPage = () => {
                 <div className="flex items-center gap-1.5 sm:gap-2 p-1 rounded-2xl bg-white/5 border border-white/10 w-full sm:w-fit backdrop-blur-xl">
                   <button
                     onClick={() => setActiveTab("all")}
-                    className={`flex-1 sm:flex-initial px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all text-center truncate ${
-                      activeTab === "all"
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all text-center truncate ${activeTab === "all"
                         ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
                         : "text-slate-400 hover:text-white"
-                    }`}
+                      }`}
                   >
                     All Community Stories
                   </button>
@@ -309,11 +420,10 @@ const DashboardPage = () => {
                         navigate("/login");
                       }
                     }}
-                    className={`flex-1 sm:flex-initial px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all text-center truncate ${
-                      activeTab === "my"
+                    className={`flex-1 sm:flex-initial px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-semibold rounded-xl transition-all text-center truncate ${activeTab === "my"
                         ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
                         : "text-slate-400 hover:text-white"
-                    }`}
+                      }`}
                     title={
                       !user
                         ? "Sign in to view your published stories"
@@ -360,11 +470,10 @@ const DashboardPage = () => {
                   <button
                     key={cat}
                     onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition-all text-xs truncate max-w-[160px] ${
-                      selectedCategory === cat
+                    className={`px-3 py-1.5 rounded-xl font-medium shrink-0 transition-all text-xs truncate max-w-[160px] ${selectedCategory === cat
                         ? "bg-purple-500/25 border border-purple-400/40 text-purple-200"
                         : "bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10"
-                    }`}
+                      }`}
                   >
                     {cat}
                   </button>
@@ -375,26 +484,42 @@ const DashboardPage = () => {
             {/* Stories Grid (Strictly grid-cols-1 on mobile, md:grid-cols-2, lg:grid-cols-3 on large) */}
             <section>
               {loading && blogs.length === 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-                  <SkeletonBlogCard />
-                  <SkeletonBlogCard />
-                  <SkeletonBlogCard />
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 min-h-[460px]">
+                  {[...Array(6)].map((_, i) => (
+                    <BlogCardSkeleton key={`init-skeleton-${i}`} />
+                  ))}
                 </div>
               ) : filteredBlogs.length > 0 ? (
-                <motion.div
-                  layout
-                  className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6"
-                >
-                  <AnimatePresence>
-                    {filteredBlogs.map((blog) => (
-                      <BlogCard
-                        key={blog.documentId || `${blog.uid}_${blog.createdAtClient}`}
-                        blog={blog}
-                        onDelete={handlePostDeleted}
-                      />
-                    ))}
-                  </AnimatePresence>
-                </motion.div>
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+                    <AnimatePresence>
+                      {filteredBlogs.map((blog, idx) => (
+                        <BlogCard
+                          key={getBlogCardKey(blog, idx)}
+                          blog={blog}
+                          onDelete={handlePostDeleted}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* Infinite Scroll Bottom Skeletons Loader with Stable Min-Height Container */}
+                  <div
+                    className={`transition-all duration-300 ${loadingMore ? "min-h-[460px] opacity-100" : "min-h-0 opacity-0"
+                      }`}
+                  >
+                    {loadingMore && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-6 min-h-[460px]">
+                        <BlogCardSkeleton />
+                        <BlogCardSkeleton />
+                        <BlogCardSkeleton />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Sentinel trigger element for Infinite Scroll IntersectionObserver */}
+                  <div ref={observerTarget} className="h-16 w-full pointer-events-none" />
+                </>
               ) : (
                 <div className="p-6 sm:p-10 text-center rounded-3xl bg-white/[0.03] border border-dashed border-white/15 backdrop-blur-xl">
                   <div className="text-4xl mb-3">📡</div>
@@ -402,33 +527,26 @@ const DashboardPage = () => {
                     {searchQuery || selectedCategory !== "All"
                       ? "No matching stories found"
                       : activeTab === "my"
-                      ? "You haven't written any stories yet"
-                      : "No stories in feed yet"}
+                        ? "You haven't written any stories yet"
+                        : "No stories in feed yet"}
                   </h3>
                   <p className="text-xs text-slate-400 mb-6 max-w-sm mx-auto leading-relaxed">
-                    Click "Multi-API Feed Sync" above to aggregate real-world Spaceflight
-                    News, Reddit discussions, and iTunes tracks, or publish your own story.
+                    {activeTab === "my"
+                      ? "Publish your inaugural dimension or dispatch your thoughts to the mesh."
+                      : "Browse real-time spatial dispatches or broadcast your own story to the universe."}
                   </p>
                   <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 w-full">
-                    <button
-                      onClick={handleFetchAdvancedFeed}
-                      disabled={isSeeding}
-                      className="w-full sm:w-auto px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 truncate"
-                    >
-                      <span>⚡</span>
-                      <span>Sync Multi-Source Dispatches</span>
-                    </button>
                     {user ? (
                       <button
                         onClick={() => setIsModalOpen(true)}
-                        className="w-full sm:w-auto px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:brightness-110 active:scale-[0.98] shadow-lg shadow-indigo-500/30 transition-all truncate"
+                        className="w-full sm:w-auto px-5 py-3 rounded-2xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:brightness-110 active:scale-[0.98] shadow-lg shadow-indigo-500/30 transition-all truncate"
                       >
                         Write Story →
                       </button>
                     ) : (
                       <button
                         onClick={() => navigate("/login")}
-                        className="w-full sm:w-auto px-4 py-2.5 sm:px-5 sm:py-3 text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:brightness-110 active:scale-[0.98] shadow-lg shadow-indigo-500/30 transition-all truncate"
+                        className="w-full sm:w-auto px-5 py-3 rounded-2xl text-xs sm:text-sm font-semibold text-white bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:brightness-110 active:scale-[0.98] shadow-lg shadow-indigo-500/30 transition-all truncate"
                       >
                         Sign in to Publish →
                       </button>

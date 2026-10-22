@@ -3,12 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, Sparkles, ChevronRight } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import logoSvg from "../../assets/logo.svg";
 
 const Navbar = ({
   isDashboard = true,
   onOpenWriteModal,
-  onFetchAdvancedFeed,
-  isSeeding = false,
   isRevalidating = false,
 }) => {
   const { user, logout } = useAuth();
@@ -19,7 +18,7 @@ const Navbar = ({
     try {
       setMobileMenuOpen(false);
       await logout();
-      navigate("/login");
+      navigate("/");
     } catch (err) {
       console.error("Sign out error:", err);
     }
@@ -34,11 +33,6 @@ const Navbar = ({
     }
   };
 
-  const handleFeedSyncClick = () => {
-    setMobileMenuOpen(false);
-    if (onFetchAdvancedFeed) onFetchAdvancedFeed();
-  };
-
   return (
     <>
       <header className="sticky top-0 z-40 w-full px-4 sm:px-6 py-3.5 backdrop-blur-xl bg-slate-950/70 border-b border-white/10 transition-all">
@@ -46,10 +40,14 @@ const Navbar = ({
           {/* ── Brand Logo ────────────────────────────────────────────────── */}
           <div className="flex items-center gap-3 sm:gap-6 min-w-0">
             <Link
-              to="/landing"
-              className="flex items-center gap-2 shrink-0 group focus:outline-none"
+              to="/"
+              className="flex items-center gap-2.5 shrink-0 group focus:outline-none"
             >
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-pulse shadow-[0_0_12px_#818cf8]" />
+              <img
+                src={logoSvg}
+                alt="SynthScroll Logo"
+                className="w-7 h-7 sm:w-8 sm:h-8 object-contain transition-transform group-hover:scale-105 group-hover:brightness-110 drop-shadow-[0_0_8px_rgba(0,245,255,0.4)]"
+              />
               <span className="text-lg sm:text-xl font-extrabold tracking-wider font-display bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent group-hover:brightness-110 transition-all">
                 SYNTHSCROLL
               </span>
@@ -69,46 +67,6 @@ const Navbar = ({
 
           {/* ── Desktop Navigation & Controls (hidden md:flex) ─────────────── */}
           <div className="hidden md:flex items-center gap-2.5 lg:gap-3.5 flex-wrap">
-            {/* Multi-API Seeder Button (Dashboard only) */}
-            {isDashboard && onFetchAdvancedFeed && (
-              <button
-                onClick={handleFeedSyncClick}
-                disabled={isSeeding}
-                className="px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-semibold text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm truncate"
-                title="Aggregates live Spaceflight News, Reddit discussions, and iTunes music into Firestore"
-              >
-                {isSeeding ? (
-                  <>
-                    <svg
-                      className="animate-spin h-3.5 w-3.5 text-emerald-400 shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    <span>Aggregating...</span>
-                  </>
-                ) : (
-                  <>
-                    <span>⚡</span>
-                    <span>Multi-API Sync</span>
-                  </>
-                )}
-              </button>
-            )}
-
             {/* Write Story (User) / Sign in to Publish (Guest) */}
             {user ? (
               <button
@@ -204,11 +162,15 @@ const Navbar = ({
             <div>
               <div className="flex items-center justify-between pb-4 border-b border-white/10">
                 <Link
-                  to="/landing"
+                  to="/"
                   onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2.5"
                 >
-                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-pulse shadow-[0_0_12px_#818cf8]" />
+                  <img
+                    src={logoSvg}
+                    alt="SynthScroll Logo"
+                    className="w-7 h-7 object-contain drop-shadow-[0_0_8px_rgba(0,245,255,0.4)]"
+                  />
                   <span className="text-lg font-extrabold tracking-wider font-display bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
                     SYNTHSCROLL
                   </span>
@@ -259,19 +221,6 @@ const Navbar = ({
 
               {/* Primary Mobile Action Buttons (Full Width, Zero Overflow) */}
               <div className="mt-5 space-y-3">
-                {isDashboard && onFetchAdvancedFeed && (
-                  <button
-                    onClick={handleFeedSyncClick}
-                    disabled={isSeeding}
-                    className="w-full py-3 px-4 rounded-2xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-200 text-sm font-semibold flex items-center justify-center gap-2 active:scale-[0.99] transition-all shadow-md"
-                  >
-                    <span>⚡</span>
-                    <span className="truncate">
-                      {isSeeding ? "Aggregating Feeds..." : "Multi-API Feed Sync"}
-                    </span>
-                  </button>
-                )}
-
                 <button
                   onClick={handleWriteClick}
                   className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:brightness-110 active:scale-[0.99] text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition-all"
@@ -293,25 +242,13 @@ const Navbar = ({
               {/* Mobile Navigation List */}
               <div className="mt-6 pt-4 border-t border-white/10 space-y-1 text-sm">
                 <Link
-                  to="/dashboard"
+                  to="/"
                   onClick={() => setMobileMenuOpen(false)}
                   className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 text-slate-200 hover:text-white transition-all"
                 >
                   <span className="flex items-center gap-2.5">
                     <span>🪐</span>
-                    <span>Dashboard Feed</span>
-                  </span>
-                  <ChevronRight size={16} className="text-slate-400" />
-                </Link>
-
-                <Link
-                  to="/landing"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="flex items-center justify-between p-3 rounded-xl hover:bg-white/5 text-slate-200 hover:text-white transition-all"
-                >
-                  <span className="flex items-center gap-2.5">
-                    <span>🌌</span>
-                    <span>3D Landing Page</span>
+                    <span>Home & Feed</span>
                   </span>
                   <ChevronRight size={16} className="text-slate-400" />
                 </Link>

@@ -21,21 +21,39 @@ const RegisterPage = () => {
   const { user, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
-  // Logged-in users visiting /register auto-redirect to /dashboard
+  // Logged-in users visiting /register auto-redirect to /
   useEffect(() => {
     if (user) {
-      navigate("/dashboard", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [user, navigate]);
+
+  const mapAuthError = (err) => {
+    const code = err?.code || "";
+    if (
+      code === "auth/invalid-credential" ||
+      code === "auth/wrong-password" ||
+      code === "auth/user-not-found"
+    ) {
+      return "Invalid email or password. Please try again.";
+    }
+    if (code === "auth/unauthorized-domain") {
+      return "This domain is not authorized. Update Firebase settings.";
+    }
+    if (code === "auth/email-already-in-use") {
+      return "This email is already registered. Please sign in.";
+    }
+    return "An unexpected error occurred. Please try again.";
+  };
 
   const handleGoogleSignIn = async () => {
     try {
       setIsGoogleSubmitting(true);
       setError("");
       await loginWithGoogle();
-      navigate("/dashboard");
+      navigate("/");
     } catch (err) {
-      setError(err?.message || "Google sign-in failed. Please try again.");
+      setError(mapAuthError(err));
     } finally {
       setIsGoogleSubmitting(false);
     }
@@ -65,11 +83,9 @@ const RegisterPage = () => {
     try {
       setIsSubmitting(true);
       await register(email, password, { name });
-      navigate("/dashboard");
+      navigate("/");
     } catch (err) {
-      const message =
-        err?.message || "Registration failed. Please verify your details.";
-      setError(message);
+      setError(mapAuthError(err));
     } finally {
       setIsSubmitting(false);
     }
